@@ -12,8 +12,12 @@ Palette is crawled from `design-seeds.com` and composed of 6 colors.
 Dataset code is in `./src`. It also includes hueshift process on img-palette pairs.
 Dataset is already prepared as `./designseeds-v3-train.t7`.
 
-# Visualize
+## Visualize
 
 Install `display` to visualize results.
 
 ![](https://tmmsexy.s3.amazonaws.com/imgs/2017-06-09-084609.jpg)
+
+- Prior color is given sometimes. Output palette will contain the color.
+- red : prior color locked 
+- yellow : prior color is loosely given.
