@@ -1,5 +1,7 @@
 # Palette Generator
 
+written by Junho Cho
+
 ## Intro
 
 This repo contains Palette Generator.
