@@ -88,9 +88,10 @@ advloss = nn.BCECriterion():cuda()
 -- ================
 -- Generator loss1 and loss2
 -- ===============
-opt.PalG_advloss = true
+opt.PalG_advloss = false
 opt.PalG_loss1 = true
 opt.PalG_lambda = 1
+opt.exp_name = 'L2only'
 
 -- ======= ADAM hyperparameters =======
 local optim_statePalG = {
@@ -225,11 +226,16 @@ function Visualize(iter)
 	display.image(visImgSet , {win=10, title=winIdx..': iter '..iter}) -- gcd(20,7) = 1
 	winIdx = (winIdx + 1)%7
 
+
 end
 
 -- ======================
 -- Training
 -- =====================
+local saveResultsPath = './results/'..opt.exp_name
+if paths.mkdir(saveResultsPath) then
+	print(saveResultsPath.. ': new folder to save training result')
+end
 for iter = iter_start, iter_end do
 	utils.setBatch(imgBatch, nil, TrainBatchMethod) -- changed
 
@@ -290,14 +296,18 @@ for iter = iter_start, iter_end do
 	table.insert(ErrPalDFake_log, {iter , ErrPalDFake})
 	table.insert(ErrPalDTotal_log, {iter , ErrPalDTotal})
 
-	if iter%500 == 1 then
-		print(iter..'loss1 : '..ErrPalGloss1)
+	if iter%5000 == 1 then
+		print(iter..' loss1 : '..ErrPalGloss1)
 		plotconfig_ErrPalGloss1.win = display.plot(ErrPalGloss1_log, plotconfig_ErrPalGloss1)
 		plotconfig_ErrPalGadvloss.win = display.plot(ErrPalGadvloss_log, plotconfig_ErrPalGadvloss)
 		plotconfig_ErrPalDReal.win = display.plot(ErrPalDReal_log, plotconfig_ErrPalDReal)
 		plotconfig_ErrPalDFake.win = display.plot(ErrPalDFake_log, plotconfig_ErrPalDFake)
 		plotconfig_ErrPalDTotal.win = display.plot(ErrPalDTotal_log, plotconfig_ErrPalDTotal)
 		Visualize(iter)
+	end
+	if iter%10000 == 1 then
+		local saveImgPath = paths.concat(saveResultsPath,iter..'.jpg')
+		image.save(saveImgPath, visImgSet )
 	end
 end
 
