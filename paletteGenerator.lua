@@ -12,8 +12,6 @@ cmd:text('Train Colorization model.')
 cmd:text()
 cmd:text('Options')
 
-cmd:option('-dataset', 'designseeds-v3-train.t7', 'prepDataset: dataset.t7 input required')
-
 cmd:option('-model_name', '', 'will save checkpoints in checkpoints/model_name/ ')
 cmd:option('-img_h', 288, 'image height')
 cmd:option('-img_w', 432, 'image width')
@@ -21,45 +19,46 @@ cmd:option('-img_w', 432, 'image width')
 cmd:option('-palette_space', 'lab', 'give palette info in rgb|lab space')
 cmd:option('-norm_input_output', true, 'pre and de process images in -1~+1. Use TanH at output of G')
 
-
 cmd:text()
-
 opt = cmd:parse(arg or {})
+
+opt.exp_name = 'L2only' -- 'GANonly' -- 'L2only' -- 'L2+GAN'
 print(opt)
 
+torch.manualSeed(123) -- control random seed
 
 display = require 'display'
 
 require 'model'
 local utils = require 'src.utils'
 
+-- load data
+imgTrainBatch = torch.load('designseeds-v3-train.t7')
+imgValBatch = torch.load('designseeds-v3-val.t7')
+local val_iter = 10000  -- We will Visualize() at val_iter
 
--- Batch
-local imgBatch = {} -- imgBatch.input ,GT, res , batchsize
-
-assert(opt.dataset ~= '', 'give argument of -dataset')
-
-imgBatch = torch.load(opt.dataset)
-print(imgBatch.name .. ' dataset loaded, # of imgs:' .. imgBatch.imgNum)
-print('method: '..imgBatch.method)
-
-batchsize = 200 --opt.batchsize
-imgBatch.batchsize = batchsize  -- opt.batchsize
-imgBatch.res = {288, 432}
-res = imgBatch.res
--- print(imgBatch.res)
+-- Batch config
+local imgBatch = {}
 
 
-local TrainBatchMethod = {loadpath = imgBatch.method,
+print(imgTrainBatch.name .. ' dataset loaded, # of imgs:' .. imgTrainBatch.imgNum)
+print('method: '..imgTrainBatch.method)
+
+batchsize = 200 
+
+res = imgTrainBatch.res
+local batchmethod = {loadpath = imgTrainBatch.method,
 							loadPaletteOnly = true,  -- Load palette only. Do not load imgs
-							res = imgBatch.res,  -- unrelated
+							res = imgTrainBatch.res,  -- unrelated
 							crop = nil ,--unrelated
 							do_resize = false, --unrelated
 							augmentation = true, -- unrelated
 							labcache = false,--  opt.labcache,
 							palette_space = 'lab' --  opt.palette_space
 						}
-imgBatch.batchmethod = TrainBatchMethod
+imgTrainBatch.batchmethod = batchmethod
+imgTrainBatch.batchsize = batchsize  -- opt.batchsize
+imgTrainBatch.res = {288, 432}
 
 local noise_dim = 10
 local palette_num = 6
@@ -88,10 +87,18 @@ advloss = nn.BCECriterion():cuda()
 -- ================
 -- Generator loss1 and loss2
 -- ===============
-opt.PalG_advloss = false
-opt.PalG_loss1 = true
-opt.PalG_lambda = 1
-opt.exp_name = 'L2only'
+
+if opt.exp_name == 'L2+GAN' then
+	opt.PalG_advloss = true --false
+	opt.PalG_lambda = 1 
+elseif opt.exp_name == 'L2only' then
+	opt.PalG_advloss = false
+	opt.PalG_lambda = 1 
+elseif opt.exp_name == 'GANonly' then
+	opt.PalG_advloss = true 
+	opt.PalG_lambda = 0 
+end
+
 
 -- ======= ADAM hyperparameters =======
 local optim_statePalG = {
@@ -153,12 +160,15 @@ feval_PalG_ = function(thetaPalG)
 
 	-- loss1
 	local dJ_dh_x = torch.zeros(PalG_output:size()):cuda()
-	if opt.PalG_loss1 then
-		ErrPalGloss1 = loss1:forward(PalG_output, PalG_GT)
-		dJ_dh_x = loss1:backward(PalG_output, PalG_GT)
-	else
-		ErrPalGloss1 = 0
-	end
+	-- if opt.PalG_loss1 then
+	ErrPalGloss1 = loss1:forward(PalG_output, PalG_GT)
+	dJ_dh_x = loss1:backward(PalG_output, PalG_GT)
+
+	-- else
+		-- ErrPalGloss1 = loss1:forward(PalG_output, PalG_GT)
+		-- dJ_dh_x = PalG_output: loss1:backward(PalG_output, PalG_GT)
+		-- ErrPalGloss1 = 0
+	-- end
 
 	-- Total loss
 	PalG:backward(PalG_input, df_dg +  dJ_dh_x:mul(opt.PalG_lambda))
@@ -177,7 +187,7 @@ ErrPalDTotal_log = loaded_lossDlog or  {}
 
 plotconfig_ErrPalGloss1 = {
 	win = 11,
-	title = 'lambda : '..opt.PalG_lambda ..  ' / PalG loss output : iter / batchsize '..batchsize,
+	title = opt.exp_name..' : lambda : '..opt.PalG_lambda ..  ' / PalG loss output : iter / batchsize '..batchsize,
 	labels = {'iter','loss1'},
 	ylabels = 'ratio'
 }
@@ -210,6 +220,14 @@ plotconfig_ErrPalDTotal = {
 -- =====================
 
 local winIdx = 0
+if exp_name == 'L2+GAN' then
+	 winIdx = 0
+elseif exp_name == 'GANonly' then
+	 winIdx = 10
+elseif exp_name == 'L2only' then
+	 winIdx = 20
+end
+
 local pad_w = 5
 local set_w = 3* math.floor(res[1]/6) + pad_w -- 2 palettes
 local visImgSet = torch.Tensor(3, res[1], 7 * set_w  ):fill(0) -- 5 for boundary
@@ -237,7 +255,18 @@ if paths.mkdir(saveResultsPath) then
 	print(saveResultsPath.. ': new folder to save training result')
 end
 for iter = iter_start, iter_end do
-	utils.setBatch(imgBatch, nil, TrainBatchMethod) -- changed
+
+	-- if iter % val_iter == 1 then 
+	-- 	imgBatch = imgValBatch 
+	-- 	do_train = false
+	-- else 
+	-- 	imgBatch = imgTrainBatch 
+	-- 	do_train = true
+	-- end
+	imgBatch = imgTrainBatch 
+	do_train = true
+
+	utils.setBatch(imgBatch, nil, batchmethod) -- changed
 
 	local noise = torch.Tensor(batchsize, noise_dim):normal(0, 0.1) -- Define noise in norm(0, 0.1) as vector of (batchsize, 10)
 	-- ==========
@@ -281,22 +310,27 @@ for iter = iter_start, iter_end do
 
 	-- ===== Forward Pass to generate fake_output
 	PalG_output = PalG:forward(PalG_input)
-	-- Compute discriminator loss
-	feval_PalD_()
-	-- compute  generator loss
-	feval_PalG_()
 
-	-- Optimize D first then G
-	optim.adam(feval_PalD, thetaPalD, optim_statePalD) -- prints loss before backward
-	optim.adam(feval_PalG, thetaPalG, optim_statePalG) -- prints loss before backward
+	if do_train then
+		-- Compute discriminator loss
+		feval_PalD_()
+		-- compute  generator loss
+		feval_PalG_()
 
+		-- Optimize D first then G
+		optim.adam(feval_PalD, thetaPalD, optim_statePalD) -- prints loss before backward
+		optim.adam(feval_PalG, thetaPalG, optim_statePalG) -- prints loss before backward
+
+		table.insert(ErrPalGadvloss_log, {iter , ErrPalGadvloss})
+		table.insert(ErrPalDReal_log, {iter , ErrPalDReal})
+		table.insert(ErrPalDFake_log, {iter , ErrPalDFake})
+		table.insert(ErrPalDTotal_log, {iter , ErrPalDTotal})
+	else -- val
+		ErrPalGloss1 = loss1:forward(PalG_output, PalG_GT)
+	end
 	table.insert(ErrPalGloss1_log, {iter , ErrPalGloss1})
-	table.insert(ErrPalGadvloss_log, {iter , ErrPalGadvloss})
-	table.insert(ErrPalDReal_log, {iter , ErrPalDReal})
-	table.insert(ErrPalDFake_log, {iter , ErrPalDFake})
-	table.insert(ErrPalDTotal_log, {iter , ErrPalDTotal})
 
-	if iter%5000 == 1 then
+	if iter%500 == 1 then
 		print(iter..' loss1 : '..ErrPalGloss1)
 		plotconfig_ErrPalGloss1.win = display.plot(ErrPalGloss1_log, plotconfig_ErrPalGloss1)
 		plotconfig_ErrPalGadvloss.win = display.plot(ErrPalGadvloss_log, plotconfig_ErrPalGadvloss)
