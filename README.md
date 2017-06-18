@@ -16,7 +16,7 @@ Use following `./src/crawl_script.json` to crawl.
 Dataset code is in `./src`. It also includes hueshift process on img-palette pairs.
 However, this implementation do not use images.
 
-For convinience, Dataset is already prepared as `./designseeds-v3-train.t7`.
+For convinience, Dataset is already prepared as `./designseeds-v3-train.t7` and `./designseeds-val.t7`.
 
 ## Visualize
 
