@@ -2,6 +2,14 @@
 
 written by [Junho Cho](http://tmmse.xyz/junhocho/)
 
+Train and validate with `th paletteGenerator.lua`.
+
+more options with `-exp_name` or `-saveResultsPath`.
+
+eg)
+`th paletteGenerator.lua -exp_name L2only -saveResultsPath l2only_results`.
+`th paletteGenerator.lua -exp_name GANonly -saveResultsPath GANonly_results`.
+
 ## Intro
 
 This repo contains Palette Generator.
