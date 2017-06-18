@@ -35,3 +35,21 @@ Install `display` to visualize results.
 - Prior color is given sometimes. Output palette will contain the color.
 - red : prior color locked 
 - yellow : prior color is loosely given.
+
+## Results
+
+### L2+GAN
+![](https://tmmsexy.s3.amazonaws.com/imgs/2017-06-18-889.jpg)
+
+Best model proposed
+
+### L2 only
+![](https://tmmsexy.s3.amazonaws.com/imgs/2017-06-18-890.jpg)
+
+Cannot learn to generate various color palette
+
+### GAN only
+![](https://tmmsexy.s3.amazonaws.com/imgs/2017-06-18-891.jpg)
+
+Seems like mode collapse occur
+
