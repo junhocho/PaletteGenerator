@@ -35,7 +35,6 @@ local utils = require 'src.utils'
 -- load data
 imgTrainBatch = torch.load('designseeds-v3-train.t7')
 imgValBatch = torch.load('designseeds-v3-val.t7')
-local val_iter = 10000  -- We will Visualize() at val_iter
 
 -- Batch config
 local imgBatch = {}
@@ -44,7 +43,7 @@ local imgBatch = {}
 print(imgTrainBatch.name .. ' dataset loaded, # of imgs:' .. imgTrainBatch.imgNum)
 print('method: '..imgTrainBatch.method)
 
-batchsize = 200 
+batchsize = 200
 
 res = imgTrainBatch.res
 local batchmethod = {loadpath = imgTrainBatch.method,
@@ -60,6 +59,10 @@ imgTrainBatch.batchmethod = batchmethod
 imgTrainBatch.batchsize = batchsize  -- opt.batchsize
 imgTrainBatch.res = {288, 432}
 
+imgValBatch.batchmethod = batchmethod
+imgValBatch.batchsize = 1  -- opt.batchsize
+imgValBatch.res = {288, 432}
+
 local noise_dim = 10
 local palette_num = 6
 local palette_dim  = palette_num * 3
@@ -72,7 +75,7 @@ thetaPalG, gradThetaPalG = PalG:getParameters()
 thetaPalD, gradThetaPalD = PalD:getParameters()
 
 local iter_start = 1
-local iter_end = 2000000
+local iter_end = 100001 --430001 -- 1001 --430001 --2000000
 
 
 
@@ -250,19 +253,12 @@ end
 -- ======================
 -- Training
 -- =====================
-local saveResultsPath = './results/'..opt.exp_name
+local saveResultsPath = './results-10k/'..opt.exp_name
 if paths.mkdir(saveResultsPath) then
 	print(saveResultsPath.. ': new folder to save training result')
 end
 for iter = iter_start, iter_end do
 
-	-- if iter % val_iter == 1 then 
-	-- 	imgBatch = imgValBatch 
-	-- 	do_train = false
-	-- else 
-	-- 	imgBatch = imgTrainBatch 
-	-- 	do_train = true
-	-- end
 	imgBatch = imgTrainBatch 
 	do_train = true
 
@@ -339,7 +335,7 @@ for iter = iter_start, iter_end do
 		plotconfig_ErrPalDTotal.win = display.plot(ErrPalDTotal_log, plotconfig_ErrPalDTotal)
 		Visualize(iter)
 	end
-	if iter%10000 == 1 then
+	if iter%1000 == 1 then
 		local saveImgPath = paths.concat(saveResultsPath,iter..'.jpg')
 		image.save(saveImgPath, visImgSet )
 	end
@@ -350,3 +346,75 @@ end
 
 
 
+-- ======================
+-- VAL
+-- =====================
+local saveResultsPath = './results-10k/'..opt.exp_name..'-VAL'
+local ErrSum = 0
+batchsize = 1
+if paths.mkdir(saveResultsPath) then
+	print(saveResultsPath.. ': new folder to save Val result')
+end
+for iter = 1, imgValBatch.imgNum do
+
+	imgBatch = imgValBatch 
+	do_train = false
+
+	utils.setBatch(imgBatch, {math.random(1, imgValBatch.imgNum)}, batchmethod) -- changed
+
+	local noise = torch.Tensor(batchsize, noise_dim):normal(0, 0.1) -- Define noise in norm(0, 0.1) as vector of (batchsize, 10)
+	-- ==========
+	-- lock : desired fix value
+	-- hint : including lock. but if not locked color is added with noise
+	-- ==========
+	-- For Ex)
+	-- GT		 	5		7		8		6		9
+	-- lock 	 	0		1 		1		0		0
+	-- hint			1		1		1		0		0
+	-- noise 		0.1		0.2		-0.1	0.3		-0.2
+	-- noise_ 		0.1		0		0		0		0     -- Applied only on hint
+	-- inputlocked	0		7		8		0		0
+	-- inputhint	5.1		7		8		0		0
+	-- ==========
+	-- dataset palette is (batchsize, 18)
+	-- add noise to palette
+	-- or either lock palette
+	-- ==========
+	lock = torch.ByteTensor(batchsize, palette_num):bernoulli(0.1) -- n x 6
+	hint = torch.ByteTensor(batchsize, palette_num):bernoulli(0.1) -- n x 6
+	hint:maskedFill(lock, 1)
+
+	local lock_temp = lock:view(batchsize * palette_num, 1)
+	local lock_lab = torch.cat({lock_temp, lock_temp, lock_temp}):resize(batchsize, palette_num*3) -- n x 18
+	local hint_temp = hint:view(batchsize * palette_num, 1)
+	local hint_lab = torch.cat({hint_temp, hint_temp, hint_temp}):resize(batchsize, palette_num*3) -- n x 18
+
+	local palette_GT = imgBatch.input2:clone():double()
+	local palette_hint = palette_GT:clone()
+	palette_hint:maskedFill(1 - hint_lab, 0) -- n x 18
+	local palette_noise = palette_GT:clone():normal(0, 0.05)
+	palette_noise:maskedFill(1 - hint_lab, 0) -- noise only on unlocked and unhint
+	palette_noise:maskedFill(lock_lab, 0)
+	palette_hint = palette_hint + palette_noise
+
+
+	PalG_hint = palette_hint
+	PalG_input = torch.cat({noise, lock:double(), palette_hint}):cuda() -- batchsize x (10+6+18)
+	PalG_GT = palette_GT:cuda()
+
+	-- ===== Forward Pass to generate fake_output
+	PalG_output = PalG:forward(PalG_input)
+
+	ErrPalGloss1 = loss1:forward(PalG_output, PalG_GT)
+	ErrSum = ErrSum + ErrPalGloss1
+	table.insert(ErrPalGloss1_log, {iter , ErrPalGloss1})
+
+	print(iter..' loss1 : '..ErrPalGloss1)
+	Visualize(iter)
+
+	if iter%7 == 0 then
+		local saveImgPath = paths.concat(saveResultsPath,iter..'.jpg')
+		image.save(saveImgPath, visImgSet )
+	end
+end
+print(ErrSum/imgBatch.imgNum)
