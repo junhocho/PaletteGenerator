@@ -8,8 +8,6 @@ require 'optim'
 
 cmd = torch.CmdLine()
 cmd:text()
-cmd:text('Train Colorization model.')
-cmd:text()
 cmd:text('Options')
 
 cmd:option('-model_name', '', 'will save checkpoints in checkpoints/model_name/ ')
@@ -19,12 +17,17 @@ cmd:option('-img_w', 432, 'image width')
 cmd:option('-palette_space', 'lab', 'give palette info in rgb|lab space')
 cmd:option('-norm_input_output', true, 'pre and de process images in -1~+1. Use TanH at output of G')
 
+-- Above are unrelated parameters but necessary for code to work.
+
+cmd:option('-exp_name', 'L2+GAN', 'What to experiment on,  L2only | GANonly | L2+GAN')
+cmd:option('-saveResultsPath', 'results', 'save where?  results -> `./results/exp_name`')
+
 cmd:text()
 opt = cmd:parse(arg or {})
 
-opt.exp_name = 'L2only' -- 'GANonly' -- 'L2only' -- 'L2+GAN'
 print(opt)
 
+local saveResultsPath = paths.concat(opt.saveResultsPath, opt.exp_name)
 torch.manualSeed(123) -- control random seed
 
 display = require 'display'
@@ -253,7 +256,6 @@ end
 -- ======================
 -- Training
 -- =====================
-local saveResultsPath = './results-10k/'..opt.exp_name
 if paths.mkdir(saveResultsPath) then
 	print(saveResultsPath.. ': new folder to save training result')
 end
@@ -349,7 +351,7 @@ end
 -- ======================
 -- VAL
 -- =====================
-local saveResultsPath = './results-10k/'..opt.exp_name..'-VAL'
+local saveResultsPath = saveResultsPath..'-VAL'
 local ErrSum = 0
 batchsize = 1
 if paths.mkdir(saveResultsPath) then
@@ -417,4 +419,4 @@ for iter = 1, imgValBatch.imgNum do
 		image.save(saveImgPath, visImgSet )
 	end
 end
-print(ErrSum/imgBatch.imgNum)
+print('MSE of validation set is : '..ErrSum/imgBatch.imgNum)
